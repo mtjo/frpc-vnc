@@ -8,14 +8,15 @@ Future<void> main(List<String> args) async {
   final host = args[0];
   print('probe 开始 host=' + host + ':' + args[1]);
   final port = int.parse(args[1]);
-  final password = args.length > 2 ? args[2] : null;
+  final password = args.length > 3 ? args[3] : null;
+  final username = args.length > 2 ? args[2] : null;
 
   final events = <Map<String, Object?>>[];
   final ready = Completer<Map<String, Object?>>();
   final cmds = StreamController<Map<String, Object?>>();
 
   final conn = VncConnection(
-    VncOptions(host: host, port: port, password: password),
+    VncOptions(host: host, port: port, username: username, password: password),
     (ev) {
       events.add(ev);
       print('[event] ${ev['ev']} ${ev.containsKey('message') ? ev['message'] : ''}');

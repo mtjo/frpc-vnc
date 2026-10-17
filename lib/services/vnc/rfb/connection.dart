@@ -23,6 +23,7 @@ class VncOptions {
   VncOptions({
     required this.host,
     required this.port,
+    this.username,
     this.password,
     this.tlsVerify = false,
     this.shared = true,
@@ -33,6 +34,9 @@ class VncOptions {
 
   final String host;
   final int port;
+
+  /// macOS ARD 认证（安全类型 30）所需的登录用户名。
+  final String? username;
   final String? password;
   final bool tlsVerify;
   final bool shared;
@@ -207,12 +211,20 @@ class VncConnection {
         final response = _desEncryptPassword(_options.password!, challenge);
         _socket!.add(response);
       } else if (chosen == secArdAuthentication) {
-        // Apple Remote Desktop 认证：16 字节挑战 → 两轮 HMAC-MD5。
-        final challenge = await _reader.read(16);
-        if (_options.password == null || _options.password!.isEmpty) {
-          throw Exception('服务器要求密码认证（ARD），但未提供密码');
-        }
-        _socket!.add(_ardEncryptPassword(_options.password!, challenge));
+        // Apple Remote Desktop / macOS 屏幕共享（TigerVNC CSecurityDH）：
+        // 读 DH 参数 → 发送 AES-128-ECB 加密的用户名+密码 + 客户端公钥。
+        final header = await _reader.read(4);
+        final total = AppleDhParams.expectedLength(header);
+        final rest = await _reader.read(total - 4);
+        final params = AppleDhParams.parse(Uint8List.fromList([...header, ...rest]));
+        final response = appleDhAuth(
+          params,
+          _options.username ?? '',
+          _options.password ?? '',
+        );
+        _socket!.add(response.encryptedCredentials);
+        _socket!.add(response.clientPublic);
+        await _socket!.flush();
       }
 
       // 安全结果（3.8 起必有；3.3 在安全类型中已表达；3.7 无此字段）。
@@ -704,9 +716,6 @@ class VncConnection {
 
   Uint8List _desEncryptPassword(String password, Uint8List challenge) =>
       desEcbEncrypt(vncAuthKey(password), challenge);
-
-  Uint8List _ardEncryptPassword(String password, Uint8List challenge) =>
-      ardEncryptPassword(password, challenge);
 
   String _decodeText(Uint8List bytes) {
     try {

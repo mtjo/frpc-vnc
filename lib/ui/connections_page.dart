@@ -116,6 +116,7 @@ class _ConnectionsPageState extends State<ConnectionsPage> {
         builder: (_) => VncViewerPage(
           host: host,
           port: port,
+          username: b.username,
           password: b.password,
           tlsVerify: b.tlsVerify,
           title: b.name,

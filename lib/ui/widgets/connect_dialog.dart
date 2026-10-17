@@ -22,6 +22,7 @@ class _ConnectDialogState extends State<ConnectDialog> {
   late final TextEditingController _host;
   late final TextEditingController _port;
   late final TextEditingController _password;
+  late final TextEditingController _username;
   late bool _viaTunnel;
   String? _selectedProxyName;
   late bool _tlsVerify;
@@ -34,6 +35,7 @@ class _ConnectDialogState extends State<ConnectDialog> {
     _host = TextEditingController(text: e?.host ?? '');
     _port = TextEditingController(text: (e?.port ?? 5900).toString());
     _password = TextEditingController(text: e?.password ?? '');
+    _username = TextEditingController(text: e?.username ?? '');
     _viaTunnel = e?.viaProxyId != null;
     _selectedProxyName = e?.viaProxyName;
     _tlsVerify = e?.tlsVerify ?? false;
@@ -45,6 +47,7 @@ class _ConnectDialogState extends State<ConnectDialog> {
     _host.dispose();
     _port.dispose();
     _password.dispose();
+    _username.dispose();
     super.dispose();
   }
 
@@ -133,10 +136,18 @@ class _ConnectDialogState extends State<ConnectDialog> {
               ],
               const SizedBox(height: 12),
               TextField(
+                controller: _username,
+                decoration: const InputDecoration(
+                  labelText: '用户名（连接 macOS 屏幕共享时必填）',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
                 controller: _password,
                 obscureText: true,
                 decoration: const InputDecoration(
-                  labelText: 'VNC 密码（可留空）',
+                  labelText: '密码（macOS 填登录密码，可留空）',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -181,6 +192,7 @@ class _ConnectDialogState extends State<ConnectDialog> {
         name: name,
         host: '127.0.0.1',
         port: 0,
+        username: _username.text.isEmpty ? null : _username.text,
         password: _password.text.isEmpty ? null : _password.text,
         viaProxyId: _selectedProxyName,
         viaProxyName: _selectedProxyName,
@@ -198,6 +210,7 @@ class _ConnectDialogState extends State<ConnectDialog> {
       name: name,
       host: host,
       port: port,
+      username: _username.text.isEmpty ? null : _username.text,
       password: _password.text.isEmpty ? null : _password.text,
       tlsVerify: _tlsVerify,
     ));

@@ -19,6 +19,7 @@ class VncViewerPage extends StatefulWidget {
     super.key,
     required this.host,
     required this.port,
+    this.username,
     this.password,
     this.tlsVerify = false,
     required this.title,
@@ -26,6 +27,7 @@ class VncViewerPage extends StatefulWidget {
 
   final String host;
   final int port;
+  final String? username;
   final String? password;
   final bool tlsVerify;
   final String title;
@@ -73,6 +75,7 @@ class _VncViewerPageState extends State<VncViewerPage> {
       final session = await VncSession.connect(VncOptions(
         host: widget.host,
         port: widget.port,
+        username: widget.username,
         password: widget.password,
         tlsVerify: widget.tlsVerify,
       ));

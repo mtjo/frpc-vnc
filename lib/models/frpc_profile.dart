@@ -461,6 +461,7 @@ class VncBookmark {
     required this.name,
     required this.host,
     required this.port,
+    this.username,
     this.password,
     this.tlsVerify = false,
     this.viaProxyId,
@@ -471,6 +472,9 @@ class VncBookmark {
   String name;
   String host;
   int port;
+
+  /// macOS ARD 认证（安全类型 30）所需的登录用户名。
+  String? username;
 
   /// VNC 密码；明文存储于本地配置（与主流 VNC 客户端行为一致）。
   String? password;
@@ -487,6 +491,7 @@ class VncBookmark {
         'name': name,
         'host': host,
         'port': port,
+        if (username != null && username!.isNotEmpty) 'username': username,
         if (password != null && password!.isNotEmpty) 'password': password,
         'tlsVerify': tlsVerify,
         if (viaProxyId != null) 'viaProxyId': viaProxyId,
@@ -498,6 +503,7 @@ class VncBookmark {
         name: (j['name'] as String?) ?? 'VNC',
         host: (j['host'] as String?) ?? '',
         port: (j['port'] as num?)?.toInt() ?? 5900,
+        username: j['username'] as String?,
         password: j['password'] as String?,
         tlsVerify: (j['tlsVerify'] as bool?) ?? false,
         viaProxyId: j['viaProxyId'] as String?,
