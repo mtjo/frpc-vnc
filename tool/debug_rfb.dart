@@ -27,8 +27,9 @@ Future<void> main() async {
 
     () async {
       try {
-        sock.add('RFB 003.008\n'.codeUnits); // 服务器先发版本，客户端不回显
-        print('[server] version sent');
+        sock.add('RFB 003.008\n'.codeUnits); // 服务器先发版本
+        final cv = await read(12); // 客户端按规范回显版本
+        print('[server] client version: ${String.fromCharCodes(cv).trim()}');
         sock.add([1, 1]); // 1 security type: None
         final chosen = await read(1);
         print('[server] chosen: ${chosen[0]}');

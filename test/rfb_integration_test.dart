@@ -80,8 +80,12 @@ class FakeVncServer {
 
     void send(List<int> bytes) => sock.add(bytes);
 
-    // 1. 版本：服务器先发，客户端不回显。
+    // 1. 版本：服务器先发，客户端按规范回显自己的版本。
     send(utf8.encode('RFB 003.008\n'));
+    final clientVersion = await read(12);
+    if (String.fromCharCodes(clientVersion) != 'RFB 003.008\n') {
+      throw Exception('客户端版本回应错误: ${String.fromCharCodes(clientVersion)}');
+    }
 
     // 2. 安全类型。
     final hasAuth = _password != null;

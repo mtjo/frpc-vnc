@@ -10,6 +10,7 @@ const int secNone = 1;
 const int secVncAuthentication = 2;
 const int secTight = 16;
 const int secUltra = 17;
+const int secArdAuthentication = 30; // Apple Remote Desktop（macOS 屏幕共享默认）
 const int secTls = 18; // TigerVNC/RealVNC 扩展：先 TLS 握手再重新走 RFB 握手
 const int secVeNCrypt = 19;
 

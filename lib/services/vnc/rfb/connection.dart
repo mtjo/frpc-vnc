@@ -13,6 +13,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'decoders.dart';
+import 'ard_auth.dart';
 import 'des.dart';
 import 'protocol.dart';
 import 'tight_decoder.dart';
@@ -134,8 +135,17 @@ class VncConnection {
         throw Exception('不是 RFB 服务器（版本串: ${String.fromCharCodes(proto)}）');
       }
 
+      // 按规范回应客户端版本：选双方都支持的最高版本
+      //（客户端支持到 3.8，不超过服务器的 minor 版本）。
+      // 3.889 等 RealVNC 扩展版本按 3.8 流程处理。
+      final minor = version % 1000;
+      final replyMinor = minor >= 8 ? '008' : (minor == 7 ? '007' : '003');
+      _socket!.add(('RFB 003.' + replyMinor + '\n').codeUnits);
+      await _socket!.flush();
+
+      // 3.3 服务器单方面指定安全类型；其余按 3.7+ 流程处理。
       final List<int> offered;
-      if (version == 3003) {
+      if (version <= 3003) {
         final r = ByteReader(await _reader.read(4));
         final t = r.u32();
         if (t == 0) {
@@ -150,17 +160,24 @@ class VncConnection {
         offered = [...await _reader.read(n)];
       }
 
-      // 安全类型优先级：TLS > VNC 认证 > None。Tight(16) 等复杂类型跳过，
-      // 依赖服务器同时提供基础类型（TightVNC/x11vnc 均如此）。
+      // 安全类型优先级：TLS > ARD(macOS 屏幕共享) > VNC 认证 > None。
+      // Tight(16) 等复杂类型跳过，依赖服务器同时提供基础类型
+      // （TightVNC/x11vnc 均如此）。
       int chosen = 0;
       if (offered.contains(secTls)) {
         chosen = secTls;
+      } else if (offered.contains(secArdAuthentication)) {
+        chosen = secArdAuthentication;
       } else if (offered.contains(secVncAuthentication)) {
         chosen = secVncAuthentication;
       } else if (offered.contains(secNone)) {
         chosen = secNone;
       } else {
-        throw Exception('服务器不支持的安全类型: $offered');
+        throw Exception(
+          '服务器不支持的安全类型: $offered'
+          '（若目标是 macOS：系统设置→通用→共享→屏幕共享→(i)→'
+          '开启"VNC 观看器可以用密码控制屏幕"）',
+        );
       }
 
       if (chosen == secTls) {
@@ -189,10 +206,17 @@ class VncConnection {
         }
         final response = _desEncryptPassword(_options.password!, challenge);
         _socket!.add(response);
-          }
+      } else if (chosen == secArdAuthentication) {
+        // Apple Remote Desktop 认证：16 字节挑战 → 两轮 HMAC-MD5。
+        final challenge = await _reader.read(16);
+        if (_options.password == null || _options.password!.isEmpty) {
+          throw Exception('服务器要求密码认证（ARD），但未提供密码');
+        }
+        _socket!.add(_ardEncryptPassword(_options.password!, challenge));
+      }
 
-      // 安全结果（3.8 必有；3.3 在安全类型中已表达；3.7 无此字段）。
-      if (version == 3008) {
+      // 安全结果（3.8 起必有；3.3 在安全类型中已表达；3.7 无此字段）。
+      if (version >= 3008) {
         final result = ByteReader(await _reader.read(4)).u32();
         if (result != 0) {
           final reasonLen = ByteReader(await _reader.read(4)).u32();
@@ -680,6 +704,9 @@ class VncConnection {
 
   Uint8List _desEncryptPassword(String password, Uint8List challenge) =>
       desEcbEncrypt(vncAuthKey(password), challenge);
+
+  Uint8List _ardEncryptPassword(String password, Uint8List challenge) =>
+      ardEncryptPassword(password, challenge);
 
   String _decodeText(Uint8List bytes) {
     try {
