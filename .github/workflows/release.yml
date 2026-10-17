@@ -1,0 +1,142 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    name: 单元测试
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: 下载 frpc 二进制
+        run: ./tool/fetch_frpc.sh
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test
+
+  build-android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r26d
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: 安装 gomobile
+        run: |
+          go install golang.org/x/mobile/cmd/gomobile@latest
+          gomobile init
+        working-directory: go-bridge
+      - name: 构建 frpc 桥接库
+        run: |
+          chmod +x build.sh
+          ./build.sh android
+        working-directory: go-bridge
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+      - name: 下载 frpc 二进制（桌面端资源）
+        run: ./tool/fetch_frpc.sh
+      - run: flutter pub get
+      - run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+  build-desktop:
+    name: 桌面端 ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: macos
+          - os: windows-latest
+            target: windows
+          - os: ubuntu-latest
+            target: linux
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Linux 依赖
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev mpv libmpv-dev
+      - name: 下载 frpc 二进制
+        run: ./tool/fetch_frpc.sh
+        shell: bash
+      - run: flutter config --enable-{macos,windows,linux}-desktop
+      - run: flutter pub get
+      - run: flutter build ${{ matrix.target }} --release
+      - name: 打包 macOS
+        if: runner.os == 'macOS'
+        run: |
+          cd build/macos/Build/Products/Release
+          zip -qry frpc-vnc-macos.zip frpc_vnc.app
+          echo "ASSET=$(pwd)/frpc-vnc-macos.zip" >> $GITHUB_ENV
+      - name: 打包 Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath frpc-vnc-windows.zip
+          echo "ASSET=$PWD/frpc-vnc-windows.zip" >> $env:GITHUB_ENV
+      - name: 打包 Linux
+        if: runner.os == 'Linux'
+        run: |
+          cd build/linux/x64/release/bundle
+          tar -czf ../../../frpc-vnc-linux.tar.gz .
+          mv ../../../frpc-vnc-linux.tar.gz .
+          echo "ASSET=$(pwd)/frpc-vnc-linux.tar.gz" >> $GITHUB_ENV
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ env.ASSET }}
+
+  release:
+    name: 发布 Release
+    runs-on: ubuntu-latest
+    needs: [build-android, build-desktop]
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: 整理产物
+        run: |
+          mkdir dist
+          cp artifacts/apk/app-release.apk dist/frpc-vnc-android.apk || true
+          cp artifacts/*/*.zip dist/ 2>/dev/null || true
+          cp artifacts/*/*.tar.gz dist/ 2>/dev/null || true
+          ls -la dist/
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: dist/*
