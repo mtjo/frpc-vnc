@@ -1,0 +1,27 @@
+name: frpc_vnc
+description: 支持 frpc 隧道的全平台 VNC 客户端
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  path_provider: ^2.1.4
+  image: ^4.2.0
+  shared_preferences: ^2.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/frpc/bin/frpc-macos-arm64
+    - assets/frpc/bin/frpc-macos-amd64
+    - assets/frpc/bin/frpc-windows-amd64.exe
+    - assets/frpc/bin/frpc-linux-amd64
