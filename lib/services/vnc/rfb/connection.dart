@@ -66,6 +66,7 @@ class VncConnection {
   int get height => _fb.height;
 
   bool _closed = false;
+  bool _disposed = false;
   final bool _fileTransferCapable = true;
 
   // ---- 生命周期 -----------------------------------------------------------
@@ -103,11 +104,16 @@ class VncConnection {
   }
 
   Future<void> close() async {
+    if (_closed) return;
     _closed = true;
     await _dispose();
+    // 即使是客户端主动关闭也回发确认，主 isolate 依赖它完成优雅关闭。
+    _sendEvent({'ev': 'closed', 'reason': '客户端主动断开'});
   }
 
   Future<void> _dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     _tight.dispose();
     await _reader.cancel();
     try {

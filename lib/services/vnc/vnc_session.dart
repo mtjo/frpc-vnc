@@ -47,6 +47,9 @@ class VncSession {
   ReceivePort? _errors;
   bool _tornDown = false;
 
+  /// worker 确认 socket 已优雅关闭（FIN 已发出）。
+  final _workerClosed = Completer<void>();
+
   /// 建立连接并等待就绪；失败时抛出 [VncSessionException]。
   static Future<VncSession> connect(VncOptions options) async {
     final s = VncSession._();
@@ -94,6 +97,7 @@ class VncSession {
           s.state = VncState.error;
           s._events.add(m);
         case 'closed':
+          if (!s._workerClosed.isCompleted) s._workerClosed.complete();
           if (!ready.isCompleted) {
             sub.cancel();
             fail(VncSessionException((m['reason'] as String?) ?? '连接已关闭'));
@@ -153,13 +157,18 @@ class VncSession {
 
   void requestFullRefresh() => _send({'cmd': 'refresh'});
 
+  /// 优雅关闭：通知 worker 主动关闭 socket（发 FIN），确认后再回收
+  /// isolate。直接杀 isolate 会让 TCP 以 RST 断开，服务端会话状态
+  /// 依赖超时回收，反复连接/断开会在目标机上留下悬挂会话。
   Future<void> close() async {
     if (state == VncState.closed) return;
+    state = VncState.closed;
     try {
       _send({'cmd': 'close'});
     } catch (_) {}
-    state = VncState.closed;
-    await Future<void>.delayed(const Duration(milliseconds: 50));
+    try {
+      await _workerClosed.future.timeout(const Duration(seconds: 2));
+    } catch (_) {}
     _teardown();
   }
 
