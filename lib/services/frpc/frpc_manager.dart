@@ -62,7 +62,18 @@ class FrpcManager {
   }
 
   /// 生成 Profile 的 TOML 配置。
-  String buildToml(FrpcProfile profile) => profileToToml(profile);
+  ///
+  /// 应用托管的 frpc 强制日志输出到控制台：状态机依赖解析 stdout 判定
+  /// "登录成功/代理启动"，若用户配置重定向到文件会导致状态失明。
+  String buildToml(FrpcProfile profile) {
+    final p = profile.copy();
+    final log = p.extra['log'];
+    if (log is Map) {
+      log['to'] = 'console';
+      log.remove('disablePrintColor');
+    }
+    return profileToToml(p);
+  }
 
   Future<void> startProfile(FrpcProfile profile) async {
     if (stateOf(profile.id) == FrpcState.running ||

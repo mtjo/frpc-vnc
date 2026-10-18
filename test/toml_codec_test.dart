@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:frpc_vnc/models/frpc_profile.dart';
+import 'package:frpc_vnc/services/frpc/frpc_manager.dart';
 import 'package:frpc_vnc/services/frpc/toml_codec.dart';
 
 void main() {
@@ -113,6 +114,32 @@ void main() {
       expect(v1.bindPort, 15901);
       // 访问者与代理在同一配置中共存。
       expect(back.proxies, hasLength(1));
+    });
+
+    test('应用托管的配置强制控制台日志（不丢失其余字段）', () {
+      const source = '''
+serverAddr = "x"
+serverPort = 7000
+
+[log]
+to = "/tmp/log/frpc.log"
+level = "info"
+maxDays = 3
+
+[[visitors]]
+name = "v"
+type = "stcp"
+serverName = "s"
+secretKey = "k"
+bindPort = 15900
+''';
+      final p = tomlToProfile(source, id: 'x');
+      final toml = FrpcManager.instance.buildToml(p);
+      expect(toml, contains('to = "console"'));
+      expect(toml, contains('level = "info"'));
+      expect(toml, contains('maxDays = 3'));
+      expect(toml, isNot(contains('/tmp/log/frpc.log')));
+      expect(toml, contains('[[visitors]]'));
     });
 
     test('官方 visitor TOML 可解析', () {
