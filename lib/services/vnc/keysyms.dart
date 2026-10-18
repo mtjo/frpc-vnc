@@ -1,5 +1,7 @@
 library;
 
+import 'package:flutter/services.dart';
+
 /// X11 keysym 常量与 Flutter LogicalKeyboardKey → keysym 映射。
 
 /// 常用 X11 keysym（RFB 协议使用）。
@@ -96,4 +98,95 @@ class Keysyms {
     'Space Bar': space,
     ' ': space,
   };
+
+  /// 将 Flutter 按键事件映射为 keysym。
+  ///
+  /// 优先使用 event.character（含 Shift 产生的实际字符），否则按
+  /// keyLabel 查表，最后回退到 keyId（可打印 ASCII 与 unicode 一致）。
+  static int? fromKeyEvent(KeyEvent event) {
+    final key = event.logicalKey;
+    final character = event.character;
+    if (character != null && character.isNotEmpty) {
+      final rune = character.runes.first;
+      if (rune >= 0x20 && rune <= 0x7E) return rune;
+    }
+    final mapped = _labelToKeysym[key.keyLabel];
+    if (mapped != null) return mapped;
+    // 修饰键等无字符按键：按 keyId 匹配常见控制键。
+    switch (key) {
+      case LogicalKeyboardKey.shiftLeft:
+        return shiftL;
+      case LogicalKeyboardKey.shiftRight:
+        return shiftR;
+      case LogicalKeyboardKey.controlLeft:
+        return controlL;
+      case LogicalKeyboardKey.controlRight:
+        return controlR;
+      case LogicalKeyboardKey.altLeft:
+        return altL;
+      case LogicalKeyboardKey.altRight:
+        return altR;
+      case LogicalKeyboardKey.metaLeft:
+        return metaL;
+      case LogicalKeyboardKey.metaRight:
+        return metaR;
+      case LogicalKeyboardKey.enter:
+      case LogicalKeyboardKey.numpadEnter:
+        return enter;
+      case LogicalKeyboardKey.backspace:
+        return backSpace;
+      case LogicalKeyboardKey.escape:
+        return escape;
+      case LogicalKeyboardKey.tab:
+        return tab;
+      case LogicalKeyboardKey.delete:
+        return delete;
+      case LogicalKeyboardKey.arrowLeft:
+        return left;
+      case LogicalKeyboardKey.arrowRight:
+        return right;
+      case LogicalKeyboardKey.arrowUp:
+        return up;
+      case LogicalKeyboardKey.arrowDown:
+        return down;
+      case LogicalKeyboardKey.home:
+        return home;
+      case LogicalKeyboardKey.end:
+        return end;
+      case LogicalKeyboardKey.pageUp:
+        return pageUp;
+      case LogicalKeyboardKey.pageDown:
+        return pageDown;
+      case LogicalKeyboardKey.f1:
+        return f1;
+      case LogicalKeyboardKey.f2:
+        return f2;
+      case LogicalKeyboardKey.f3:
+        return f3;
+      case LogicalKeyboardKey.f4:
+        return f4;
+      case LogicalKeyboardKey.f5:
+        return f5;
+      case LogicalKeyboardKey.f6:
+        return f6;
+      case LogicalKeyboardKey.f7:
+        return f7;
+      case LogicalKeyboardKey.f8:
+        return f8;
+      case LogicalKeyboardKey.f9:
+        return f9;
+      case LogicalKeyboardKey.f10:
+        return f10;
+      case LogicalKeyboardKey.f11:
+        return f11;
+      case LogicalKeyboardKey.f12:
+        return f12;
+      case LogicalKeyboardKey.capsLock:
+        return capsLock;
+    }
+    // 可打印 ASCII：Flutter 的 keyId 即小写字符的 unicode。
+    final id = key.keyId;
+    if (id >= 0x20 && id <= 0x7E) return id;
+    return null;
+  }
 }

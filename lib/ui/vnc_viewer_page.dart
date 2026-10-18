@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -55,6 +56,11 @@ class _VncViewerPageState extends State<VncViewerPage> {
   final TransformationController _transform = TransformationController();
   StreamSubscription? _evSub;
 
+  // 硬件键盘直通（桌面端/移动端外接键盘）。
+  final FocusNode _keyboardFocus = FocusNode();
+  final Map<LogicalKeyboardKey, int> _pressedKeys = {};
+
+
   @override
   void initState() {
     super.initState();
@@ -67,6 +73,7 @@ class _VncViewerPageState extends State<VncViewerPage> {
     _session?.close();
     _transform.dispose();
     _image?.dispose();
+    _keyboardFocus.dispose();
     super.dispose();
   }
 
@@ -214,15 +221,55 @@ class _VncViewerPageState extends State<VncViewerPage> {
     });
   }
 
+  /// 硬件键盘事件 → RFB 按键事件（直通模式）。
+  KeyEventResult _onKeyEvent(FocusNode node, KeyEvent event) {
+    final session = _session;
+    if (session == null || session.state != VncState.connected) {
+      return KeyEventResult.ignored;
+    }
+    final keysym = Keysyms.fromKeyEvent(event);
+    if (keysym == null) return KeyEventResult.ignored;
+
+    final down = event is KeyDownEvent || event is KeyRepeatEvent;
+    if (down) {
+      _pressedKeys[event.logicalKey] = keysym;
+      // Ctrl+V：先把本地剪贴板同步到远端再发送 V，实现跨端粘贴。
+      if (event.logicalKey == LogicalKeyboardKey.keyV &&
+          HardwareKeyboard.instance.isControlPressed) {
+        Clipboard.getData(Clipboard.kTextPlain).then((d) {
+          final text = d?.text;
+          if (text != null && text.isNotEmpty) {
+            session.sendCutText(text);
+          }
+        });
+      }
+      session.sendKey(keysym, down: true);
+    } else {
+      _pressedKeys.remove(event.logicalKey);
+      session.sendKey(keysym, down: false);
+    }
+    return KeyEventResult.handled;
+  }
+
   void _sendSpecialKey(_SpecialKey k) {
-    switch (k) {
-      case _SpecialKey.escape:
+    switch (k.kind) {
+      case _SpecialKind.escape:
         _sendKeysym(Keysyms.escape, true);
         _sendKeysym(Keysyms.escape, false);
-      case _SpecialKey.tab:
+      case _SpecialKind.tab:
         _sendKeysym(Keysyms.tab, true);
         _sendKeysym(Keysyms.tab, false);
-      case _SpecialKey.ctrlAltDel:
+      case _SpecialKind.enter:
+        _sendKeysym(Keysyms.enter, true);
+        _sendKeysym(Keysyms.enter, false);
+      case _SpecialKind.backSpace:
+        _sendKeysym(Keysyms.backSpace, true);
+        _sendKeysym(Keysyms.backSpace, false);
+      case _SpecialKind.char:
+        final code = k.charCode!;
+        _sendKeysym(code, true);
+        _sendKeysym(code, false);
+      case _SpecialKind.ctrlAltDel:
         _sendKeysym(Keysyms.controlL, true);
         _sendKeysym(Keysyms.altL, true);
         _sendKeysym(Keysyms.delete, true);
@@ -230,26 +277,6 @@ class _VncViewerPageState extends State<VncViewerPage> {
         _sendKeysym(Keysyms.altL, false);
         _sendKeysym(Keysyms.controlL, false);
     }
-  }
-
-  void _sendText(String text) {
-    final session = _session;
-    if (session == null) return;
-    for (final ch in text.runes) {
-      final keysym = _keysymForRune(ch);
-      if (keysym != null) {
-        _sendKeysym(keysym, true);
-        _sendKeysym(keysym, false);
-      }
-    }
-  }
-
-  int? _keysymForRune(int rune) {
-    if (rune >= 0x20 && rune <= 0x7E) return rune;
-    if (rune == 0x0A) return Keysyms.enter;
-    if (rune == 0x09) return Keysyms.tab;
-    // 非 ASCII 字符无法直接映射 keysym，多数服务器忽略。
-    return null;
   }
 
   Future<void> _disconnect() async {
@@ -328,9 +355,14 @@ class _VncViewerPageState extends State<VncViewerPage> {
   Widget _buildViewer() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        return GestureDetector(
+        return Focus(
+          focusNode: _keyboardFocus,
+          autofocus: true,
+          onKeyEvent: _onKeyEvent,
+          child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTapUp: (d) {
+            _keyboardFocus.requestFocus();
             final (fx, fy) = _toFb(d.localPosition, constraints.biggest);
             _sendPointer(fx, fy, buttonOverride: 1);
             Future<void>.delayed(const Duration(milliseconds: 60),
@@ -378,12 +410,15 @@ class _VncViewerPageState extends State<VncViewerPage> {
             scaleEnabled: true,
             child: Center(
               child: _image == null
-                  ? const Text('等待画面…', style: TextStyle(color: Colors.white54))
+                  ? const Text('等待画面…\n（点击画面后即可直接打字）',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.white54))
                   : RawImage(
                       image: _image,
                       fit: BoxFit.contain,
                       filterQuality: FilterQuality.low,
                     ),
+            ),
             ),
           ),
         );
@@ -399,14 +434,7 @@ class _VncViewerPageState extends State<VncViewerPage> {
       builder: (ctx) => _KeyboardPanel(
         activeModifiers: _activeModifiers,
         onToggleModifier: _toggleModifier,
-        onSendText: (t) {
-          Navigator.pop(ctx);
-          _sendText(t);
-        },
-        onSpecialKey: (k) {
-          Navigator.pop(ctx);
-          _sendSpecialKey(k);
-        },
+        onSpecialKey: _sendSpecialKey,
       ),
     );
   }
@@ -434,31 +462,73 @@ class _VncViewerPageState extends State<VncViewerPage> {
   }
 }
 
-enum _SpecialKey { escape, tab, ctrlAltDel }
+enum _SpecialKind { escape, tab, ctrlAltDel, enter, backSpace, char }
+
+class _SpecialKey {
+  const _SpecialKey._(this.kind, [this.charCode]);
+
+  final _SpecialKind kind;
+  final int? charCode;
+
+  static const escape = _SpecialKey._(_SpecialKind.escape);
+  static const tab = _SpecialKey._(_SpecialKind.tab);
+  static const ctrlAltDel = _SpecialKey._(_SpecialKind.ctrlAltDel);
+  static const enter = _SpecialKey._(_SpecialKind.enter);
+  static const backSpace = _SpecialKey._(_SpecialKind.backSpace);
+  static _SpecialKey char(int code) => _SpecialKey._(_SpecialKind.char, code);
+}
 
 // ---------------------------------------------------------------------------
 // 键盘面板
 // ---------------------------------------------------------------------------
 
-class _KeyboardPanel extends StatelessWidget {
+class _KeyboardPanel extends StatefulWidget {
   _KeyboardPanel({
     required this.activeModifiers,
     required this.onToggleModifier,
-    required this.onSendText,
     required this.onSpecialKey,
   });
 
   final Set<int> activeModifiers;
   final void Function(int) onToggleModifier;
-  final void Function(String) onSendText;
   final void Function(_SpecialKey) onSpecialKey;
 
+  @override
+  State<_KeyboardPanel> createState() => _KeyboardPanelState();
+}
+
+class _KeyboardPanelState extends State<_KeyboardPanel> {
   final _textCtrl = TextEditingController();
+  String _last = '';
+
+  /// 软键盘实时逐字发送（含退格），与查看器硬件键盘一致。
+  void _onChanged(String text) {
+    var i = 0;
+    final minLen = math.min(_last.length, text.length);
+    while (i < minLen && _last[i] == text[i]) {
+      i++;
+    }
+    for (var d = 0; d < _last.length - i; d++) {
+      widget.onSpecialKey(_SpecialKey.backSpace);
+    }
+    for (final rune in text.substring(i).runes) {
+      if (rune == 0x0A || rune == 0x0D) {
+        widget.onSpecialKey(_SpecialKey.enter);
+        continue;
+      }
+      // 可打印字符直接发送。
+      if (rune >= 0x20 && rune <= 0x7E) {
+        widget.onSpecialKey(_SpecialKey.char(rune));
+      }
+    }
+    _last = text;
+    _textCtrl.clear();
+  }
 
   @override
   Widget build(BuildContext context) {
     Widget modBtn(String label, int keysym) {
-      final active = activeModifiers.contains(keysym);
+      final active = widget.activeModifiers.contains(keysym);
       return Padding(
         padding: const EdgeInsets.all(4),
         child: FilledButton.tonal(
@@ -467,7 +537,7 @@ class _KeyboardPanel extends StatelessWidget {
             foregroundColor: active ? Colors.white : null,
             minimumSize: const Size(64, 48),
           ),
-          onPressed: () => onToggleModifier(keysym),
+          onPressed: () => widget.onToggleModifier(keysym),
           child: Text(label),
         ),
       );
@@ -488,40 +558,37 @@ class _KeyboardPanel extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _textCtrl,
-                    decoration: const InputDecoration(
-                      labelText: '输入并发送到远端（回车=Enter）',
-                      border: OutlineInputBorder(),
-                    ),
-                    onSubmitted: onSendText,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton(
-                  onPressed: () => onSendText(_textCtrl.text),
-                  child: const Text('发送'),
-                ),
-              ],
+            TextField(
+              controller: _textCtrl,
+              autofocus: true,
+              keyboardType: TextInputType.text,
+              autocorrect: false,
+              enableSuggestions: false,
+              decoration: const InputDecoration(
+                labelText: '直接打字——输入内容实时发送到远端',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: _onChanged,
             ),
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
               children: [
                 OutlinedButton(
-                  onPressed: () => onSpecialKey(_SpecialKey.escape),
+                  onPressed: () => widget.onSpecialKey(_SpecialKey.escape),
                   child: const Text('Esc'),
                 ),
                 OutlinedButton(
-                  onPressed: () => onSpecialKey(_SpecialKey.tab),
+                  onPressed: () => widget.onSpecialKey(_SpecialKey.tab),
                   child: const Text('Tab'),
                 ),
                 OutlinedButton(
-                  onPressed: () => onSpecialKey(_SpecialKey.ctrlAltDel),
+                  onPressed: () => widget.onSpecialKey(_SpecialKey.ctrlAltDel),
                   child: const Text('Ctrl+Alt+Del'),
+                ),
+                OutlinedButton(
+                  onPressed: () => widget.onSpecialKey(_SpecialKey.enter),
+                  child: const Text('回车'),
                 ),
               ],
             ),
