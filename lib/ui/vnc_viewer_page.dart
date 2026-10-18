@@ -104,7 +104,10 @@ class _VncViewerPageState extends State<VncViewerPage> {
       if (session == null) {
         setState(() {
           _connecting = false;
-          _connectingError ??= '连接失败';
+          _connectingError ??= '目标机器在线但屏幕共享端口未开放，且局域网内'
+              '未发现其 Bonjour 服务。请到目标 Mac 上检查：'
+              '系统设置 → 通用 → 共享 → 屏幕共享 是否已开启，以及该 Mac 是否处于睡眠状态。'
+              '（原始错误：$_connectingError）';
         });
         return;
       }
