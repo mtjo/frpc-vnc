@@ -73,6 +73,22 @@ class _StatusPageState extends State<StatusPage> {
                 ),
               ),
             ),
+          if (FrpcManager.instance.runningVisitors().isNotEmpty) ...[
+            const SizedBox(height: 16),
+            Text('访问者（STCP/XTCP 隧道入口）',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            for (final v in FrpcManager.instance.runningVisitors())
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.enhanced_encryption),
+                  title: Text('${v.name} [${v.type.toUpperCase()}]'),
+                  subtitle: Text(
+                    '本机 ${v.bindAddr}:${v.bindPort} → 远端代理 "${v.serverName}"',
+                  ),
+                ),
+              ),
+          ],
         ],
       ),
     );

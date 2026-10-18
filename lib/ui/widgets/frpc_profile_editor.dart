@@ -327,9 +327,54 @@ class _FrpcProfileEditorPageState extends State<FrpcProfileEditorPage>
                 ),
             ],
           ),
+          const SizedBox(height: 16),
+          _SectionCard(
+            title: '访问者（${_profile.visitors.length}）',
+            action: IconButton(
+              icon: const Icon(Icons.add),
+              tooltip: '添加访问者',
+              onPressed: _addVisitor,
+            ),
+            children: [
+              if (_profile.visitors.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: Text(
+                    '还没有访问者。STCP/XTCP 访问者用于访问远端发布的加密代理：'
+                    '在本机开一个端口，连接该端口即经隧道到达远端服务（VNC 连接时可直接选用）。',
+                  ),
+                ),
+              for (var i = 0; i < _profile.visitors.length; i++)
+                _VisitorTile(
+                  visitor: _profile.visitors[i],
+                  onEdit: () => _editVisitor(i),
+                  onDelete: () => setState(() => _profile.visitors.removeAt(i)),
+                ),
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _addVisitor() async {
+    final result = await showDialog<VisitorConfig>(
+      context: context,
+      builder: (_) => const _VisitorEditDialog(),
+    );
+    if (result != null) {
+      setState(() => _profile.visitors.add(result));
+    }
+  }
+
+  Future<void> _editVisitor(int index) async {
+    final result = await showDialog<VisitorConfig>(
+      context: context,
+      builder: (_) => _VisitorEditDialog(existing: _profile.visitors[index]),
+    );
+    if (result != null) {
+      setState(() => _profile.visitors[index] = result);
+    }
   }
 
   Widget _buildTomlTab() {
@@ -677,6 +722,153 @@ class _ProxyEditDialogState extends State<_ProxyEditDialog> {
               return;
             }
             Navigator.pop(context, p);
+          },
+          child: const Text('确定'),
+        ),
+      ],
+    );
+  }
+
+  Widget _f(String label, TextEditingController c, {bool number = false}) => TextField(
+        controller: c,
+        keyboardType: number ? TextInputType.number : null,
+        decoration: InputDecoration(labelText: label, border: const OutlineInputBorder()),
+      );
+}
+
+class _VisitorTile extends StatelessWidget {
+  const _VisitorTile({required this.visitor, required this.onEdit, required this.onDelete});
+
+  final VisitorConfig visitor;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: const Icon(Icons.enhanced_encryption),
+      title: Text('${visitor.name}  [${visitor.type.toUpperCase()} 访问者]'),
+      subtitle: Text(
+        '${visitor.bindAddr}:${visitor.bindPort} → 远端代理 "${visitor.serverName}"',
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(icon: const Icon(Icons.edit_outlined), onPressed: onEdit),
+          IconButton(icon: const Icon(Icons.delete_outline), onPressed: onDelete),
+        ],
+      ),
+      onTap: onEdit,
+    );
+  }
+}
+
+class _VisitorEditDialog extends StatefulWidget {
+  const _VisitorEditDialog({this.existing});
+
+  final VisitorConfig? existing;
+
+  @override
+  State<_VisitorEditDialog> createState() => _VisitorEditDialogState();
+}
+
+class _VisitorEditDialogState extends State<_VisitorEditDialog> {
+  late String _type;
+  late final TextEditingController _name;
+  late final TextEditingController _serverName;
+  late final TextEditingController _secretKey;
+  late final TextEditingController _bindAddr;
+  late final TextEditingController _bindPort;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    _type = e?.type ?? 'stcp';
+    _name = TextEditingController(text: e?.name ?? 'visitor_1');
+    _serverName = TextEditingController(text: e?.serverName ?? '');
+    _secretKey = TextEditingController(text: e?.secretKey ?? '');
+    _bindAddr = TextEditingController(text: e?.bindAddr ?? '127.0.0.1');
+    _bindPort = TextEditingController(
+        text: e != null ? e.bindPort.toString() : '15900');
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _serverName.dispose();
+    _secretKey.dispose();
+    _bindAddr.dispose();
+    _bindPort.dispose();
+    super.dispose();
+  }
+
+  VisitorConfig? _build() {
+    final name = _name.text.trim();
+    final serverName = _serverName.text.trim();
+    final bindPort = int.tryParse(_bindPort.text.trim());
+    if (name.isEmpty || serverName.isEmpty || bindPort == null) return null;
+    final bindAddr = _bindAddr.text.trim().isEmpty ? '127.0.0.1' : _bindAddr.text.trim();
+    final secretKey = _secretKey.text.trim();
+    if (_type == 'xtcp') {
+      return XtcpVisitor(
+          name: name, serverName: serverName, secretKey: secretKey,
+          bindAddr: bindAddr, bindPort: bindPort);
+    }
+    return StcpVisitor(
+        name: name, serverName: serverName, secretKey: secretKey,
+        bindAddr: bindAddr, bindPort: bindPort);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.existing == null ? '添加访问者' : '编辑访问者'),
+      content: SizedBox(
+        width: 440,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(value: 'stcp', label: Text('STCP')),
+                  ButtonSegment(value: 'xtcp', label: Text('XTCP（P2P）')),
+                ],
+                selected: {_type},
+                onSelectionChanged: (s) => setState(() => _type = s.first),
+              ),
+              const SizedBox(height: 12),
+              _f('访问者名称', _name),
+              const SizedBox(height: 12),
+              _f('被访问的代理名称（serverName）', _serverName),
+              const SizedBox(height: 12),
+              _f('secretKey（须与发布端一致）', _secretKey),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(child: _f('本地监听地址', _bindAddr)),
+                  const SizedBox(width: 8),
+                  Expanded(child: _f('本地端口', _bindPort, number: true)),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+        FilledButton(
+          onPressed: () {
+            final v = _build();
+            if (v == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('请填写完整且正确的字段')),
+              );
+              return;
+            }
+            Navigator.pop(context, v);
           },
           child: const Text('确定'),
         ),

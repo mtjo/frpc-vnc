@@ -87,6 +87,7 @@ class _ConnectionsPageState extends State<ConnectionsPage> {
     String host;
     int port;
     if (b.viaProxyId != null) {
+      // 先按名称匹配 TCP 代理，再匹配 stcp/xtcp 访问者。
       final proxies = FrpcManager.instance.runningTcpProxies();
       TcpProxy? proxy;
       for (final p in proxies) {
@@ -95,17 +96,31 @@ class _ConnectionsPageState extends State<ConnectionsPage> {
           break;
         }
       }
-      proxy ??= proxies.isEmpty ? null : proxies.first;
-      if (proxy == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('没有运行中的 frpc 隧道，请先在 frpc 页启动配置')),
-          );
+      if (proxy != null) {
+        host = '127.0.0.1';
+        port = proxy.localPort;
+      } else {
+        final visitors = FrpcManager.instance.runningVisitors();
+        VisitorConfig? visitor;
+        for (final v in visitors) {
+          if (v.name == b.viaProxyName && v.bindPort > 0) {
+            visitor = v;
+            break;
+          }
         }
-        return;
+        if (visitor == null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('没有运行中的 frpc 隧道/访问者，请先在 frpc 页启动配置')),
+            );
+          }
+          return;
+        }
+        host = visitor.bindAddr.isEmpty || visitor.bindAddr == '0.0.0.0'
+            ? '127.0.0.1'
+            : visitor.bindAddr;
+        port = visitor.bindPort;
       }
-      host = '127.0.0.1';
-      port = proxy.localPort;
     } else {
       host = b.host;
       port = b.port;

@@ -90,6 +90,28 @@ String profileToToml(FrpcProfile profile) {
     _writeExtraTable(buf, e.value as Map<String, dynamic>, prefix: '', root: false);
   }
 
+  // 访问者列表。
+  for (final v in profile.visitors) {
+    _w(buf, '\n[[visitors]]\n');
+    _w(buf, 'name = ' + _v(v.name) + '\n');
+    _w(buf, 'type = ' + _v(v.type) + '\n');
+    _w(buf, 'serverName = ' + _v(v.serverName) + '\n');
+    if (v.secretKey.isNotEmpty) _w(buf, 'secretKey = ' + _v(v.secretKey) + '\n');
+    _w(buf, 'bindAddr = ' + _v(v.bindAddr) + '\n');
+    _w(buf, 'bindPort = ' + v.bindPort.toString() + '\n');
+    for (final e in v.extra.entries) {
+      if (e.value is Map) continue;
+      _w(buf, _k(e.key) + ' = ' + _v(e.value) + '\n');
+    }
+    for (final e in v.extra.entries) {
+      if (e.value is Map) {
+        _w(buf, '\n[visitors.' + _k(e.key) + ']\n');
+        _writeExtraTable(buf, e.value as Map<String, dynamic>,
+            prefix: 'visitors.' + e.key, root: false);
+      }
+    }
+  }
+
   // 代理列表。
   for (final p in profile.proxies) {
     _w(buf, '\n[[proxies]]\n');
@@ -332,6 +354,14 @@ FrpcProfile tomlToProfile(String source, {required String id, String? name}) {
     }
   }
 
+  final visitorsRaw = root.remove('visitors');
+  final visitors = <VisitorConfig>[];
+  if (visitorsRaw is List) {
+    for (final v in visitorsRaw) {
+      if (v is Map) visitors.add(_visitorFromToml(v.cast<String, dynamic>()));
+    }
+  }
+
   // 其余顶层键进 extra。
   extra.addAll(root);
 
@@ -340,6 +370,7 @@ FrpcProfile tomlToProfile(String source, {required String id, String? name}) {
     name: name ?? '导入的配置',
     server: server,
     proxies: proxies,
+    visitors: visitors,
     extra: extra,
   );
 }
@@ -352,6 +383,40 @@ void _flattenInto(Map<String, dynamic> target, String prefix, Map<String, dynami
       target['$prefix.$k'] = v;
     }
   });
+}
+
+VisitorConfig _visitorFromToml(Map<String, dynamic> m) {
+  final type = (m['type'] as String?) ?? 'stcp';
+  final known = {'name', 'type', 'serverName', 'secretKey', 'bindAddr', 'bindPort'};
+  final extra = <String, dynamic>{
+    for (final e in m.entries)
+      if (!known.contains(e.key)) e.key: e.value,
+  };
+  final base = (
+    name: (m['name'] as String?) ?? 'visitor',
+    serverName: (m['serverName'] as String?) ?? '',
+    secretKey: (m['secretKey'] as String?) ?? '',
+    bindAddr: (m['bindAddr'] as String?) ?? '127.0.0.1',
+    bindPort: ((m['bindPort'] as num?) ?? 0).toInt(),
+  );
+  if (type == 'xtcp') {
+    return XtcpVisitor(
+      name: base.name,
+      serverName: base.serverName,
+      secretKey: base.secretKey,
+      bindAddr: base.bindAddr,
+      bindPort: base.bindPort,
+      extra: extra,
+    );
+  }
+  return StcpVisitor(
+    name: base.name,
+    serverName: base.serverName,
+    secretKey: base.secretKey,
+    bindAddr: base.bindAddr,
+    bindPort: base.bindPort,
+    extra: extra,
+  );
 }
 
 ProxyConfig _proxyFromToml(Map<String, dynamic> m) {

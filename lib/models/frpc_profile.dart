@@ -12,15 +12,20 @@ class FrpcProfile {
     required this.name,
     required this.server,
     List<ProxyConfig> proxies = const [],
+    List<VisitorConfig> visitors = const [],
     this.enabled = false,
     Map<String, dynamic> extra = const {},
   })  : proxies = List.of(proxies),
+        visitors = List.of(visitors),
         extra = Map.of(extra);
 
   String id;
   String name;
   ServerConfig server;
   List<ProxyConfig> proxies;
+
+  /// 访问者配置（stcp/xtcp visitor），用于访问远端发布的 stcp/xtcp 代理。
+  List<VisitorConfig> visitors;
   bool enabled;
 
   /// 顶层未归类的 frpc 字段（如 webServer、log 等）。
@@ -31,6 +36,7 @@ class FrpcProfile {
         name: name,
         server: server.copy(),
         proxies: [for (final p in proxies) p.copy()],
+        visitors: [for (final v in visitors) v.copy()],
         enabled: enabled,
         extra: Map.of(extra),
       );
@@ -40,6 +46,7 @@ class FrpcProfile {
         'name': name,
         'server': server.toJson(),
         'proxies': [for (final p in proxies) p.toJson()],
+        'visitors': [for (final v in visitors) v.toJson()],
         'enabled': enabled,
         if (extra.isNotEmpty) 'extra': extra,
       };
@@ -51,6 +58,10 @@ class FrpcProfile {
         proxies: [
           for (final p in (j['proxies'] as List? ?? []))
             ProxyConfig.fromJson((p as Map).cast<String, dynamic>())
+        ],
+        visitors: [
+          for (final v in (j['visitors'] as List? ?? []))
+            VisitorConfig.fromJson((v as Map).cast<String, dynamic>())
         ],
         enabled: (j['enabled'] as bool?) ?? false,
         extra: ((j['extra'] as Map?) ?? {}).cast<String, dynamic>(),
@@ -452,6 +463,131 @@ class GenericProxy extends ProxyConfig {
     if (extra.isNotEmpty) j['extra'] = extra;
     return j;
   }
+}
+
+/// 访问者配置基类：访问远端发布的 stcp/xtcp 代理。
+sealed class VisitorConfig {
+  VisitorConfig({
+    required this.name,
+    required this.serverName,
+    required this.secretKey,
+    this.bindAddr = '127.0.0.1',
+    required this.bindPort,
+    Map<String, dynamic> extra = const {},
+  }) : extra = Map.of(extra);
+
+  String name;
+
+  /// 被访问的 stcp/xtcp 代理名称。
+  String serverName;
+  String secretKey;
+
+  /// 本地监听地址与端口（VNC 通过该端口经隧道访问远端服务）。
+  String bindAddr;
+  int bindPort;
+  Map<String, dynamic> extra;
+
+  String get type;
+
+  VisitorConfig copy();
+
+  Map<String, dynamic> baseJson() => {
+        'name': name,
+        'type': type,
+        'serverName': serverName,
+        'secretKey': secretKey,
+        'bindAddr': bindAddr,
+        'bindPort': bindPort,
+        if (extra.isNotEmpty) 'extra': extra,
+      };
+
+  Map<String, dynamic> toJson();
+
+  static VisitorConfig fromJson(Map<String, dynamic> j) {
+    final base = {
+      'name': (j['name'] as String?) ?? 'visitor',
+      'serverName': (j['serverName'] as String?) ?? '',
+      'secretKey': (j['secretKey'] as String?) ?? '',
+      'bindAddr': (j['bindAddr'] as String?) ?? '127.0.0.1',
+      'bindPort': (j['bindPort'] as num?)?.toInt() ?? 0,
+      if (j['extra'] != null) 'extra': (j['extra'] as Map).cast<String, dynamic>(),
+    };
+    switch (j['type'] as String?) {
+      case 'xtcp':
+        return XtcpVisitor(
+          name: base['name'] as String,
+          serverName: base['serverName'] as String,
+          secretKey: base['secretKey'] as String,
+          bindAddr: base['bindAddr'] as String,
+          bindPort: base['bindPort'] as int,
+          extra: base['extra'] as Map<String, dynamic>,
+        );
+      case 'stcp':
+      default:
+        return StcpVisitor(
+          name: base['name'] as String,
+          serverName: base['serverName'] as String,
+          secretKey: base['secretKey'] as String,
+          bindAddr: base['bindAddr'] as String,
+          bindPort: base['bindPort'] as int,
+          extra: base['extra'] as Map<String, dynamic>,
+        );
+    }
+  }
+}
+
+class StcpVisitor extends VisitorConfig {
+  StcpVisitor({
+    required super.name,
+    required super.serverName,
+    required super.secretKey,
+    required super.bindPort,
+    super.bindAddr,
+    super.extra,
+  });
+
+  @override
+  String get type => 'stcp';
+
+  @override
+  StcpVisitor copy() => StcpVisitor(
+        name: name,
+        serverName: serverName,
+        secretKey: secretKey,
+        bindAddr: bindAddr,
+        bindPort: bindPort,
+        extra: Map.of(extra),
+      );
+
+  @override
+  Map<String, dynamic> toJson() => baseJson();
+}
+
+class XtcpVisitor extends VisitorConfig {
+  XtcpVisitor({
+    required super.name,
+    required super.serverName,
+    required super.secretKey,
+    required super.bindPort,
+    super.bindAddr,
+    super.extra,
+  });
+
+  @override
+  String get type => 'xtcp';
+
+  @override
+  XtcpVisitor copy() => XtcpVisitor(
+        name: name,
+        serverName: serverName,
+        secretKey: secretKey,
+        bindAddr: bindAddr,
+        bindPort: bindPort,
+        extra: Map.of(extra),
+      );
+
+  @override
+  Map<String, dynamic> toJson() => baseJson();
 }
 
 /// VNC 连接书签。

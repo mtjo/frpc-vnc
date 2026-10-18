@@ -78,6 +78,65 @@ void main() {
       expect((back.proxies[5] as XtcpProxy).secretKey, 'sk2');
     });
 
+    test('stcp/xtcp 访问者往返无损', () {
+      final p = FrpcProfile(
+        id: 'x',
+        name: 'visitors',
+        server: ServerConfig(serverAddr: 'a', serverPort: 7000),
+        proxies: [
+          StcpProxy(name: 'stcp_vnc', localPort: 5900, secretKey: 'sk123'),
+        ],
+        visitors: [
+          StcpVisitor(
+              name: 'v_vnc',
+              serverName: 'stcp_vnc',
+              secretKey: 'sk123',
+              bindAddr: '127.0.0.1',
+              bindPort: 15900),
+          XtcpVisitor(
+              name: 'v_x',
+              serverName: 'xtcp_vnc',
+              secretKey: 'sk456',
+              bindPort: 15901),
+        ],
+      );
+      final back = tomlToProfile(profileToToml(p), id: 'x');
+      expect(back.visitors, hasLength(2));
+      final v0 = back.visitors[0] as StcpVisitor;
+      expect(v0.name, 'v_vnc');
+      expect(v0.serverName, 'stcp_vnc');
+      expect(v0.secretKey, 'sk123');
+      expect(v0.bindAddr, '127.0.0.1');
+      expect(v0.bindPort, 15900);
+      final v1 = back.visitors[1] as XtcpVisitor;
+      expect(v1.type, 'xtcp');
+      expect(v1.bindPort, 15901);
+      // 访问者与代理在同一配置中共存。
+      expect(back.proxies, hasLength(1));
+    });
+
+    test('官方 visitor TOML 可解析', () {
+      const source = '''
+serverAddr = "x"
+serverPort = 7000
+
+[[visitors]]
+name = "stcp_visitor_vnc"
+type = "stcp"
+serverName = "stcp_vnc"
+secretKey = "abc"
+bindAddr = "127.0.0.1"
+bindPort = 15900
+''';
+      final p = tomlToProfile(source, id: 'x');
+      expect(p.visitors, hasLength(1));
+      final v = p.visitors.first as StcpVisitor;
+      expect(v.serverName, 'stcp_vnc');
+      expect(v.bindPort, 15900);
+      // 再导出保留。
+      expect(profileToToml(p), contains('[[visitors]]'));
+    });
+
     test('未识别字段原样保留', () {
       const source = '''
 serverAddr = "s"

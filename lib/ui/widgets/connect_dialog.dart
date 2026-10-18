@@ -54,6 +54,7 @@ class _ConnectDialogState extends State<ConnectDialog> {
   @override
   Widget build(BuildContext context) {
     final tcpProxies = FrpcManager.instance.runningTcpProxies();
+    final visitors = FrpcManager.instance.runningVisitors();
     final runningProfiles = AppStore.instance.profiles
         .where((p) => FrpcManager.instance.stateOf(p.id) != FrpcState.stopped)
         .toList();
@@ -93,16 +94,29 @@ class _ConnectDialogState extends State<ConnectDialog> {
                     subtitle: Text('请先到 frpc 页启动一个配置，隧道建立后即可连接'),
                     contentPadding: EdgeInsets.zero,
                   )
+                else if (tcpProxies.isEmpty && visitors.isEmpty)
+                  const ListTile(
+                    leading: Icon(Icons.warning_amber_rounded),
+                    title: Text('运行中的配置没有可用的 TCP 代理或访问者'),
+                    contentPadding: EdgeInsets.zero,
+                  )
                 else
                   DropdownButtonFormField<String>(
                     initialValue: _selectedProxyName,
                     decoration: const InputDecoration(
-                      labelText: '选择隧道代理（TCP）',
+                      labelText: '选择隧道入口（TCP 代理 / STCP 访问者）',
                       border: OutlineInputBorder(),
                     ),
                     items: [
                       for (final p in tcpProxies)
-                        DropdownMenuItem(value: p.name, child: Text('${p.name} (→:${p.remotePort})')),
+                        DropdownMenuItem(
+                            value: p.name,
+                            child: Text('${p.name}（TCP → 远端 :${p.remotePort}）')),
+                      for (final v in visitors)
+                        DropdownMenuItem(
+                            value: v.name,
+                            child: Text(
+                                '${v.name}（${v.type.toUpperCase()} 访问者 · 本地 :${v.bindPort}）')),
                     ],
                     onChanged: (v) => setState(() => _selectedProxyName = v),
                   ),

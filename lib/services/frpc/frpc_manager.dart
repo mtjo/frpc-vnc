@@ -111,6 +111,16 @@ class FrpcManager {
     return result;
   }
 
+  /// 列出所有运行中的 stcp/xtcp 访问者（本地绑定端口）。
+  List<VisitorConfig> runningVisitors() {
+    final result = <VisitorConfig>[];
+    for (final p in AppStore.instance.profiles) {
+      if (stateOf(p.id) != FrpcState.running) continue;
+      result.addAll(p.visitors);
+    }
+    return result;
+  }
+
   Future<void> dispose() async {
     await _sub?.cancel();
     await _runtime.stopAll();

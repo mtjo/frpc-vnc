@@ -4,7 +4,7 @@
 
 set -euo pipefail
 
-VERSION="${1:-v0.61.1}"
+VERSION="${1:-v0.71.1}"
 VER="${VERSION#v}"
 BASE="https://github.com/fatedier/frp/releases/download/${VERSION}"
 OUT_DIR="$(cd "$(dirname "$0")/.." && pwd)/assets/frpc/bin"

@@ -20,6 +20,7 @@ import (
 	frpc "github.com/fatedier/frp/client"
 	"github.com/fatedier/frp/pkg/config"
 	v1 "github.com/fatedier/frp/pkg/config/v1"
+	"github.com/fatedier/frp/pkg/config/source"
 )
 
 // EventCallback: profileID, type("state"/"log"/"error"), payload
@@ -72,10 +73,16 @@ func Start(profileID string, toml string) error {
 		visitors = append(visitors, cfg.Visitors[i].VisitorConfigurer)
 	}
 
+	// v0.71 起 ServiceOptions 使用 ConfigSourceAggregator 传入代理/访问者。
+	agg := source.NewAggregator(source.NewConfigSource())
+	if err := agg.ConfigSource().ReplaceAll(proxies, visitors); err != nil {
+		emit(profileID, "error", "加载代理配置失败: "+err.Error())
+		return fmt.Errorf("load proxies: %w", err)
+	}
+
 	sv, err := frpc.NewService(frpc.ServiceOptions{
-		Common:      &cfg.ClientCommonConfig,
-		ProxyCfgs:   proxies,
-		VisitorCfgs: visitors,
+		Common:                 &cfg.ClientCommonConfig,
+		ConfigSourceAggregator: agg,
 	})
 	if err != nil {
 		emit(profileID, "error", "创建服务失败: "+err.Error())
