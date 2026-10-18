@@ -56,9 +56,12 @@ class PixelFormat {
     this.redMax = 255,
     this.greenMax = 255,
     this.blueMax = 255,
-    this.redShift = 16,
+    // 位移选择使 wire 字节序（小端）恰好为 R,G,B,A——原始像素可
+    // 直接 memcpy 进 framebuffer 而无需逐像素换算：
+    // 像素值 = R<<0 | G<<8 | B<<16，小端发送 → 字节 0=R, 1=G, 2=B。
+    this.redShift = 0,
     this.greenShift = 8,
-    this.blueShift = 0,
+    this.blueShift = 16,
   });
 
   int bitsPerPixel;
