@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../services/vnc/discovery.dart';
 import '../services/vnc/keysyms.dart';
 import '../services/vnc/rfb/connection.dart';
 import '../services/vnc/vnc_session.dart';
@@ -78,22 +79,40 @@ class _VncViewerPageState extends State<VncViewerPage> {
   }
 
   Future<void> _connect() async {
+    var host = widget.host;
+    var port = widget.port;
     try {
-      final session = await VncSession.connect(VncOptions(
-        host: widget.host,
-        port: widget.port,
-        username: widget.username,
-        password: widget.password,
-        tlsVerify: widget.tlsVerify,
-      ));
-      if (!mounted) {
-        session.close();
+      var session = await _tryConnect(host, port);
+      if (!mounted) return;
+      // 直连被拒（新版 macOS 屏幕共享端口会漂移）：Bonjour 自动发现重试。
+      if (session == null) {
+        if (mounted) {
+          setState(() => _statusText = '直连被拒，正在通过 Bonjour 查找屏幕共享端口…');
+        }
+        final services = await discoverScreenSharing();
+        final match = await matchByDial(services, widget.host);
+        if (match != null) {
+          host = match.host == '0.0.0.0' ? widget.host : match.host;
+          port = match.port;
+          if (mounted) {
+            setState(() => _statusText = '发现服务 ${match.name}，端口 $port，连接中…');
+          }
+          session = await _tryConnect(host, port);
+        }
+      }
+      if (!mounted) return;
+      if (session == null) {
+        setState(() {
+          _connecting = false;
+          _connectingError ??= '连接失败';
+        });
         return;
       }
       _session = session;
       _statusText = '已连接 ${session.desktopName ?? ''}';
       _evSub = session.events.listen(_onEvent);
       _checkFrame();
+      if (mounted) setState(() {});
     } catch (e) {
       if (mounted) {
         setState(() {
@@ -101,6 +120,26 @@ class _VncViewerPageState extends State<VncViewerPage> {
           _connectingError = e.toString();
         });
       }
+    }
+  }
+
+  /// 尝试连接；失败时记录错误并返回 null（供上层做发现重试）。
+  Future<VncSession?> _tryConnect(String host, int port) async {
+    try {
+      return await VncSession.connect(VncOptions(
+        host: host,
+        port: port,
+        username: widget.username,
+        password: widget.password,
+        tlsVerify: widget.tlsVerify,
+      ));
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _connectingError = e.toString();
+        });
+      }
+      return null;
     }
   }
 
