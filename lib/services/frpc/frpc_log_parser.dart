@@ -27,7 +27,9 @@ class ParsedFrpcLog {
   final bool isProxyError;
 }
 
-ParsedFrpcLog parseFrpcLog(String line) {
+ParsedFrpcLog parseFrpcLog(String rawLine) {
+  // frp 即使输出到管道也带 ANSI 颜色码，先剥掉。
+  final line = rawLine.replaceAll(RegExp(r'\x1B\[[0-9;]*[A-Za-z]'), '').trimRight();
   // 去掉时间戳与 [level]。
   final m = RegExp(r'^\d{4}[-/]\d{2}[-/]\d{2} \d{2}:\d{2}:\d{2}(\.\d+)? \[([IWE])\] (.*)$').firstMatch(line);
   if (m == null) {

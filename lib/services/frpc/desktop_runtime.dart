@@ -83,6 +83,26 @@ class DesktopFrpcRuntime implements FrpcRuntime {
   @override
   Future<void> init() async {
     _binary = await FrpcBinary.ensure();
+    await _killOrphans();
+  }
+
+  /// 清理上一个应用实例遗留的 frpc 子进程（其端口占用会让新实例
+  /// 的 visitor 绑定失败）。仅匹配我们自己的运行目录特征。
+  Future<void> _killOrphans() async {
+    try {
+      final result = await Process.run('pgrep', ['-f', 'frpc.toml']);
+      final pids = (result.stdout as String)
+          .split('\n')
+          .map((l) => l.trim())
+          .where((l) => l.isNotEmpty);
+      for (final pid in pids) {
+        final ps = await Process.run('ps', ['-p', pid, '-o', 'command=']);
+        final cmd = (ps.stdout as String).trim();
+        if (cmd.contains('frpc.toml') && cmd.contains('frpc')) {
+          await Process.run('kill', [pid]);
+        }
+      }
+    } catch (_) {}
   }
 
   @override
@@ -156,6 +176,7 @@ class DesktopFrpcRuntime implements FrpcRuntime {
   }
 
   void _onLog(String profileId, String line) {
+    if (line.trim().isEmpty) return;
     final l = _logs.putIfAbsent(profileId, () => []);
     l.add(line);
     if (l.length > 500) l.removeAt(0);
