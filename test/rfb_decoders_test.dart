@@ -42,6 +42,35 @@ void main() {
     });
   });
 
+  group('AsyncByteReader 缓冲扩容', () {
+    test('缓冲填满后大块数据到达（回归：RangeError 0..65536: 72864）', () async {
+      // 第一块恰好填满 64KB 缓冲，第二块 7328 字节使所需总量 72864。
+      final c1 = Uint8List.fromList(List.generate(65536, (i) => i & 0xFF));
+      final c2 = Uint8List.fromList(List.generate(7328, (i) => (i * 7) & 0xFF));
+      final reader = AsyncByteReader(Stream.fromIterable([c1, c2]));
+      final out = await reader.read(72864);
+      expect(out, hasLength(72864));
+      expect(out[0], 0);
+      expect(out[65535], 255);
+      expect(out[65536], 0); // 第二块开始
+      expect(out[72863], (7327 * 7) & 0xFF);
+    });
+
+    test('多轮读写混合（压缩+扩容交替）', () async {
+      final chunks = <Uint8List>[
+        for (var i = 0; i < 10; i++) Uint8List.fromList(List.filled(20000, i)),
+      ];
+      final reader = AsyncByteReader(Stream.fromIterable(chunks));
+      var total = 0;
+      for (var i = 0; i < 10; i++) {
+        final out = await reader.read(20000);
+        expect(out.every((b) => b == i), isTrue);
+        total += out.length;
+      }
+      expect(total, 200000);
+    });
+  });
+
   group('Raw 解码', () {
     test('像素拷贝与 alpha 强制', () async {
       final fb = fb8x8();

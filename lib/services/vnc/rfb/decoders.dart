@@ -71,13 +71,23 @@ class AsyncByteReader {
         if (_end - _start >= n) break;
         throw const VncConnectionClosed('连接已关闭（数据不足）');
       }
-      // 追加（必要时先压缩空隙）。
-      if (_end + chunk.length > _buf.length) {
-        // 已在上面保证容量足够容纳现有数据 + n，这里只需整理。
-        final remaining = _end - _start;
+      // 整理空间：先压缩已读空隙，仍不够则扩容。
+      // （大帧场景下缓冲会被填满，仅压缩不够——必须扩容，否则
+      // setRange 越界抛 RangeError。）
+      final remaining = _end - _start;
+      if (_start > 0) {
         _buf.setRange(0, remaining, _buf, _start);
         _start = 0;
         _end = remaining;
+      }
+      if (_end + chunk.length > _buf.length) {
+        var cap = _buf.length;
+        while (cap < _end + chunk.length) {
+          cap *= 2;
+        }
+        final nb = Uint8List(cap);
+        nb.setRange(0, _end, _buf, 0);
+        _buf = nb;
       }
       _buf.setRange(_end, _end + chunk.length, chunk);
       _end += chunk.length;
